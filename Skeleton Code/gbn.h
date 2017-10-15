@@ -71,7 +71,8 @@ int gbn_socket(int domain, int type, int protocol);
 int gbn_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 int gbn_close(int sockfd);
 ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest, socklen_t socklen);
-ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags);
+//ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags);
+ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags, struct sockaddr *from, int *fromlen);
 
 ssize_t  maybe_sendto(int  s, const void *buf, size_t len, int flags, \
                       const struct sockaddr *to, socklen_t tolen);

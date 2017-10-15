@@ -41,18 +41,32 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags, const struc
 	return sendto(sockfd, buf, DATALEN, flags, dest, socklen);
 }
 
-ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
-
+ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags, struct sockaddr *from, int *fromlen){
 	/* TODO: Your code here. */
+	/*David*/
+	//sockfd is the socket descriptor to read from
+	//buf is the buffer to read the information into
+	//len = max length of the buffer
+	ssize_t temp;
+	//check if is closed
+	if (recv(sockfd, buf, len, flags) == 0){
+		return (-1);
+	}
+	else if ((temp = recv(sockfd, buf, len, flags)) > len){
+		return (temp - len);
+	}
 
-	return(-1);
+	//recvfrom();
 }
 
 int gbn_close(int sockfd){
 
 	/* TODO: Your code here. */
-
-	return(-1);
+	/*David*/
+	if (sockfd == NULL){
+		return(-1);
+	}
+	close(sockfd);
 }
 
 int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
@@ -64,10 +78,23 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 }
 
 int gbn_listen(int sockfd, int backlog){
+	time_t start = time();
 
 	/* TODO: Your code here. */
-
-	return listen(sockfd, backlog);
+	/*David Gu*/
+	/*Listen before timeout*/
+	//backlog is the number of connections allowed on the incoming queue.
+	for (int cur; cur <= backlog; cur++){
+		if (fopen(sockfd, "wb") == NULL){
+			return(-1);
+		}
+		for (;;){
+			if (time() > start + TIMEOUT){
+				return(-1);
+			}
+		}
+	}
+	return(0);
 }
 
 int gbn_bind(int sockfd, const struct sockaddr *server, socklen_t socklen){
