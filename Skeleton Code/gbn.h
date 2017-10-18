@@ -53,11 +53,11 @@ typedef struct state_t{
 } state_t;
 
 enum {
-	CLOSED=0,
+	CLOSED,
 	SYN_SENT,
 	SYN_RCVD,
 	ESTABLISHED,
-	FIN_SENT,
+	FIN_SENT,`
 	FIN_RCVD
 };
 

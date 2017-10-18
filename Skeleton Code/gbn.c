@@ -47,15 +47,17 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags, struct sockaddr *
 	//sockfd is the socket descriptor to read from
 	//buf is the buffer to read the information into
 	//len = max length of the buffer
+	alarm(TIMEOUT);
+
 	ssize_t temp;
 	//check if is closed
-	if (recv(sockfd, buf, len, flags) == 0){
+	if (recvfrom(sockfd, buf, len, flags, from, fromlen) == 0){
 		return (-1);
 	}
-	else if ((temp = recv(sockfd, buf, len, flags)) > len){
-		return (temp - len);
+	else if ((temp = recvfrom(sockfd, buf, len, flags, from, fromlen)) > DATALEN){
+		return (temp - DATALEN);
 	}
-
+	//TODO make a helper function to send the ACK
 	//recvfrom();
 }
 
@@ -78,6 +80,7 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 }
 
 int gbn_listen(int sockfd, int backlog){
+
 	time_t start = time();
 
 	/* TODO: Your code here. */
