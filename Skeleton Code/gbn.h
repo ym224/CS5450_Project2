@@ -17,7 +17,7 @@
 
 /*----- Error variables -----*/
 extern int h_errno;
-extern int errno;
+extern int _errno;
 
 /*----- Protocol parameters -----*/
 #define LOSS_PROB 1e-2    /* loss probability                            */
@@ -46,14 +46,17 @@ typedef struct {
 } __attribute__((packed)) gbnhdr;
 
 typedef struct state_t{
-
-
-	/* TODO: Your state information could be encoded here. */
-
+	int mode, state, timed_out;
+	uint8_t  seqnum;
 } state_t;
 
 enum {
-	CLOSED,
+	SLOW = 1,
+	FAST
+};
+
+enum {
+	CLOSED=0,
 	SYN_SENT,
 	SYN_RCVD,
 	ESTABLISHED,
@@ -65,14 +68,13 @@ extern state_t s;
 
 void gbn_init();
 int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen);
-int gbn_listen(int sockfd, int backlog);
+int gbn_listen(int sockfd, int backlog, struct sockaddr *server, socklen_t socklen);
 int gbn_bind(int sockfd, const struct sockaddr *server, socklen_t socklen);
 int gbn_socket(int domain, int type, int protocol);
-int gbn_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+int gbn_accept(int sockfd, struct sockaddr *client, socklen_t socklen);
 int gbn_close(int sockfd);
 ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest, socklen_t socklen);
-//ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags);
-ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags, struct sockaddr *from, int *fromlen);
+ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src, socklen_t socklen);
 
 ssize_t  maybe_sendto(int  s, const void *buf, size_t len, int flags, \
                       const struct sockaddr *to, socklen_t tolen);

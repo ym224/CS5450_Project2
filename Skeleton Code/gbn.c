@@ -11,7 +11,38 @@ uint16_t checksum(uint16_t *buf, int nwords)
 	return ~sum;
 }
 
+void sig_handler(int signum){
+	s.timed_out = 0;
+	printf("Received signal %d\n", signum);
+}
+
+gbnhdr * make_packet(uint8_t type, uint8_t seqnum, int isHeader, char *buffer, int datalen){
+	gbnhdr *packet = malloc(sizeof(gbnhdr));
+	packet->type = type;
+	packet->seqnum = seqnum;
+
+	if (isHeader == 0) {
+		packet->checksum = 0;
+	}
+	else {
+		memcpy(packet->data, buffer, sizeof(buffer));
+
+		packet->checksum = checksum((uint16_t *) buffer, datalen);
+	}
+	return packet;
+}
+
+int check_header(gbnhdr *packet, int type) {
+
+	//check packet type
+	if (s.timed_out == 0 || packet->type != type || packet->seqnum < s.seqnum) {
+		return -1;
+	}
+	return 0;
+}
+
 ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr * dest, socklen_t socklen){
+	int attempts = 0;
 	// check current state
 
     // if state
@@ -38,71 +69,144 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags, const struc
 		}
 	}
 
+	else {
+		if (s.mode == SLOW) {
+
+		}
+		else {
+
+		}
+	}
+
+
+	if (s.timed_out || attempts == 5) {
+		s.mode = SLOW;
+
+	}
+	s.state = CLOSED;
+
 	return sendto(sockfd, buf, DATALEN, flags, dest, socklen);
 }
 
-ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags, struct sockaddr *from, int *fromlen){
-	/* TODO: Your code here. */
-	/*David*/
-	//sockfd is the socket descriptor to read from
-	//buf is the buffer to read the information into
-	//len = max length of the buffer
-	alarm(TIMEOUT);
+ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags, struct sockaddr *client, socklen_t socklen){
 
-	ssize_t temp;
-	//check if is closed
-	if (recvfrom(sockfd, buf, len, flags, from, fromlen) == 0){
-		return (-1);
+	// process buffer data
+
+	gbnhdr * packet = malloc(sizeof(gbnhdr));
+
+	recvfrom(sockfd, packet, sizeof(gbnhdr), 0, client, &socklen);
+
+
+	if (check_header(packet, DATA) == 0){
+
+		// check if data is corrupt
+		if (checksum(buf, sizeof(packet->data))) {
+			// reject
+		}
+
+		// TODO: get data into our buffer
+
+
+
+		// reply with dataack (reply with seqnum sent or next seqnum??)
+
+		gbnhdr *header = make_packet(DATAACK, packet->seqnum, 0, NULL, NULL);
+
+		// sendto sender
+		if (sendto(sockfd, header, sizeof(gbnhdr), 0, client, socklen) == -1) {
+			return -1;
+		}
+		return sizeof(packet->data);
 	}
-	else if ((temp = recvfrom(sockfd, buf, len, flags, from, fromlen)) > DATALEN){
-		return (temp - DATALEN);
+
+	if (check_header(packet, FIN) == 0) {
+		gbnhdr *header = make_packet(FINACK, 0, 0, NULL, NULL);
+		if (sendto(sockfd, header, sizeof(gbnhdr), 0, client, socklen) == -1){
+			return -1;
+		}
+		s.state = FIN_RCVD;
+		return 0;
 	}
-	//TODO make a helper function to send the ACK
-	//recvfrom();
+
+	return -1;
+
 }
 
 int gbn_close(int sockfd){
 
-	/* TODO: Your code here. */
-	/*David*/
-	if (sockfd == NULL){
+	if (sockfd == -1){
 		return(-1);
 	}
-	close(sockfd);
+
+
+	if (s.state == 3) {
+		gbnhdr * header = make_packet(FIN, 0, 0, NULL, NULL);
+		//return sendto(sockfd, header, sizeof(gbnhdr), 0, clientAddr, clientLen);
+	}
+	// if finished, end connection
+	else if (s.state == 4){
+		gbnhdr * header = make_packet(FINACK, 0, 0, NULL, NULL);
+
+		//sendto(sockfd, header, sizeof(gbnhdr), 0, hostAddr, hostLen);
+		return close(sockfd);
+	}
 }
 
 int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
-    //set signal handler
 
-	/* TODO: Your code here. */
+	// SIGALRM is called after timeout alarm
+	signal(SIGALRM, sig_handler);
 
-	return connect(sockfd, server, socklen);
+	if (sockfd < 0) {
+		return -1;
+	}
+
+	gbnhdr *header = make_packet(SYN, 0, 0, NULL, NULL);
+
+	int attempt = 0;
+	while (attempt < MAX_RETRIES) {
+		// send SYN header to initialize connection
+		if (sendto(sockfd, header, sizeof(header), 0, server, socklen) == -1 ) {
+			attempt ++;
+			continue;
+		}
+
+		s.state = SYN_SENT;
+
+		// wait for ack
+
+		alarm(TIMEOUT);
+
+		// TODO: set client address globally
+		ssize_t rec_size = recvfrom(sockfd, header, sizeof(header), 0, server, &socklen);
+
+		// check for timeout
+		if (s.timed_out == 0 || rec_size < 0) {
+			s.timed_out = 1;
+			attempt ++;
+		}
+
+		if (check_header(header, SYNACK) == 0) {
+			s.state = ESTABLISHED;
+			return 0;
+		}
+		attempt ++;
+	}
+	s.state = CLOSED;
+
+	return -1;
 }
 
-int gbn_listen(int sockfd, int backlog){
+int gbn_listen(int sockfd, int backlog, struct sockaddr * server, socklen_t socklen){
+	gbnhdr * rec_buffer = malloc(sizeof(gbnhdr));
 
-	time_t start = time();
-
-	/* TODO: Your code here. */
-	/*David Gu*/
-	/*Listen before timeout*/
-	//backlog is the number of connections allowed on the incoming queue.
-	for (int cur; cur <= backlog; cur++){
-		if (fopen(sockfd, "wb") == NULL){
-			return(-1);
-		}
-		for (;;){
-			if (time() > start + TIMEOUT){
-				return(-1);
-			}
-		}
+	if (recvfrom(sockfd, rec_buffer, sizeof(gbnhdr), 0, server, &socklen) == -1) {
+		return -1;
 	}
-	return(0);
+	return check_header(rec_buffer, SYN);
 }
 
 int gbn_bind(int sockfd, const struct sockaddr *server, socklen_t socklen){
-
-	/* TODO: Your code here. */
 
 	return bind(sockfd, server, socklen);
 }	
@@ -112,17 +216,23 @@ int gbn_socket(int domain, int type, int protocol){
 	/*----- Randomizing the seed. This is used by the rand() function -----*/
 	srand((unsigned)time(0));
 
-	/* TODO: Your code here. */
-
 	return socket(domain, type, protocol);
 }
 
-int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
+// receiver sends ack
+int gbn_accept(int sockfd, struct sockaddr *client, socklen_t socklen){
+	if (sockfd < 0) {
+		return -1;
+	}
 
-	/* TODO: Your code here. */
+	gbnhdr * packet = make_packet(SYNACK, 0, 0, NULL, NULL);
 
-	return accept(sockfd, client, socklen);
+	if (sendto(sockfd, packet, sizeof(packet), 0, client, socklen) == -1) {
+		return -1;
+	}
+	return sockfd;
 }
+
 
 ssize_t maybe_sendto(int  s, const void *buf, size_t len, int flags, \
                      const struct sockaddr *to, socklen_t tolen){

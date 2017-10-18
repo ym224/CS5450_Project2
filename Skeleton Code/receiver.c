@@ -10,7 +10,9 @@ int main(int argc, char *argv[])
 	struct sockaddr_in client;
 	FILE *outputFile;
 	socklen_t socklen;
-	
+
+	socklen = sizeof(struct sockaddr_in);
+
 	/*----- Checking arguments -----*/
 	if (argc != 3){
 		fprintf(stderr, "usage: receiver <port> <filename>\n");
@@ -36,20 +38,19 @@ int main(int argc, char *argv[])
 	server.sin_port        = htons(atoi(argv[1]));
 
 	/*----- Binding to the designated port -----*/
-	if (gbn_bind(sockfd, (struct sockaddr *)&server, sizeof(struct sockaddr_in)) == -1){
+	if (gbn_bind(sockfd, (struct sockaddr *)&server, socklen) == -1){
 		perror("gbn_bind");
 		exit(-1);
 	}
-	
+
 	/*----- Listening to new connections -----*/
-	if (gbn_listen(sockfd, 1) == -1){
+	if (gbn_listen(sockfd, 1, (struct sockaddr *)&server, socklen) == -1){
 		perror("gbn_listen");
 		exit(-1);
 	}
 
 	/*----- Waiting for the client to connect -----*/
-	socklen = sizeof(struct sockaddr_in);
-	newSockfd = gbn_accept(sockfd, (struct sockaddr *)&client, &socklen);
+	newSockfd = gbn_accept(sockfd, (struct sockaddr *)&client, socklen);
 	if (newSockfd == -1){
 		perror("gbn_accept");
 		exit(-1);
@@ -57,7 +58,7 @@ int main(int argc, char *argv[])
 	
 	/*----- Reading from the socket and dumping it to the file -----*/
 	while(1){
-		if ((numRead = gbn_recv(newSockfd, buf, DATALEN, 0, (struct sockaddr *)&server, &socklen)) == -1){
+		if ((numRead = gbn_recv(newSockfd, buf, DATALEN, 0, (struct sockaddr *)&client, socklen)) == -1){
 			perror("gbn_recv");
 			exit(-1);
 		}
