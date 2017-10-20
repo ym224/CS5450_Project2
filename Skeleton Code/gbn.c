@@ -39,6 +39,7 @@ gbnhdr * make_packet(uint8_t type, uint8_t seqnum, int isHeader, char *buffer, i
 int check_packet(gbnhdr *packet, int type, int isHeader) {
 	//check time out
 	if (s.timed_out == 0) {
+        printf("timed out\n");
         // reset time out flag
         s.timed_out = -1;
         return -1;
@@ -289,7 +290,9 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 	gbnhdr *header = make_packet(SYN, 0, 0, NULL, 0);
     printf("in gbn connect\n");
 	int attempt = 0;
-	while (attempt < MAX_RETRIES) {
+    s.timed_out = -1;
+
+    while (attempt < MAX_RETRIES) {
 		// send SYN header to initialize connection
 		if (sendto(sockfd, header, sizeof(header), 0, server, socklen) == -1 ) {
 			attempt ++;
@@ -301,7 +304,7 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 
 		// start timer and wait for ack
 
-		alarm(10);
+		alarm(TIMEOUT);
 
         gbnhdr *rec_header = malloc(sizeof(gbnhdr));
 		// received an ack from receiver/server
@@ -333,6 +336,7 @@ int gbn_listen(int sockfd, int backlog){
         printf("error rec syn from sender\n");
 		return -1;
 	}
+
     // check if packet contains SYN header
 	if (check_packet(header, SYN, 0) == 0) {
         s.state = SYN_RCVD;
@@ -349,6 +353,7 @@ int gbn_bind(int sockfd, const struct sockaddr *server, socklen_t socklen){
     receiverSocklen = socklen;
 
     printf("in bind\n");
+    s.timed_out = -1;
 	return bind(sockfd, server, socklen);
 }	
 
@@ -374,7 +379,8 @@ int gbn_accept(int sockfd, struct sockaddr *client, socklen_t socklen){
         header = make_packet(SYNACK, 0, 0, NULL, 0);
     }
 
-	if (sendto(sockfd, header, sizeof(header), 0, client, socklen) == -1) {
+    printf("created header for send\n");
+    if (sendto(sockfd, header, sizeof(header), 0, client, socklen) == -1) {
 		return -1;
 	}
     printf("sent synack header\n");
