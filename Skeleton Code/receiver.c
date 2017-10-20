@@ -50,8 +50,7 @@ int main(int argc, char *argv[])
 	}
 
 	/*----- Waiting for the client to connect -----*/
-	socklen = sizeof(struct sockaddr_in);
-	newSockfd = gbn_accept(sockfd, (struct sockaddr *)&client, socklen);
+	newSockfd = gbn_accept(sockfd, (struct sockaddr *)&server, socklen);
 	if (newSockfd == -1){
 		perror("gbn_accept");
 		exit(-1);

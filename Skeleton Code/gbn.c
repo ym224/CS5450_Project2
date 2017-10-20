@@ -318,7 +318,8 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 		if (check_packet(rec_header, SYNACK, 0) == 0) {
             printf("received synack header\n");
             s.state = ESTABLISHED;
-			return 0;
+            printf("connection established\n");
+            return 0;
 		}
 		attempt ++;
 	}
@@ -349,8 +350,6 @@ int gbn_listen(int sockfd, int backlog){
 
 int gbn_bind(int sockfd, const struct sockaddr *server, socklen_t socklen){
     // pointer to local struct on receiver server where sender address is to be stored
-    receiverServerAddr = (struct sockaddr *)server;
-    receiverSocklen = socklen;
 
     printf("in bind\n");
     s.timed_out = -1;
@@ -367,6 +366,9 @@ int gbn_socket(int domain, int type, int protocol){
 
 // receiver sends ack
 int gbn_accept(int sockfd, struct sockaddr *client, socklen_t socklen){
+    receiverServerAddr = client;
+    receiverSocklen = socklen;
+
     printf("in accept\n");
     gbnhdr * header;
     // if connection teardown initiated, reject connection by sending RST
