@@ -44,12 +44,13 @@ int main(int argc, char *argv[])
 	}
 
 	/*----- Listening to new connections -----*/
-	if (gbn_listen(sockfd, 1, (struct sockaddr *)&server, socklen) == -1){
+	if (gbn_listen(sockfd, 1) == -1){
 		perror("gbn_listen");
 		exit(-1);
 	}
 
 	/*----- Waiting for the client to connect -----*/
+	socklen = sizeof(struct sockaddr_in);
 	newSockfd = gbn_accept(sockfd, (struct sockaddr *)&client, socklen);
 	if (newSockfd == -1){
 		perror("gbn_accept");
@@ -58,7 +59,7 @@ int main(int argc, char *argv[])
 	
 	/*----- Reading from the socket and dumping it to the file -----*/
 	while(1){
-		if ((numRead = gbn_recv(newSockfd, buf, DATALEN, 0, (struct sockaddr *)&client, socklen)) == -1){
+		if ((numRead = gbn_recv(newSockfd, buf, DATALEN, 0)) == -1){
 			perror("gbn_recv");
 			exit(-1);
 		}

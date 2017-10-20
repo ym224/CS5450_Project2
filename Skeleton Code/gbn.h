@@ -17,7 +17,7 @@
 
 /*----- Error variables -----*/
 extern int h_errno;
-extern int _errno;
+extern int errno;
 
 /*----- Protocol parameters -----*/
 #define LOSS_PROB 1e-2    /* loss probability                            */
@@ -25,8 +25,7 @@ extern int _errno;
 #define DATALEN   1024    /* length of the payload                       */
 #define N         1024    /* Max number of packets a single call to gbn_send can process */
 #define TIMEOUT      1    /* timeout to resend packets (1 second)        */
-#define MAX_RETRIES  5    /* retries before timeout                      */
-#define WINDOW_SIZE  2
+#define MAX_RETRIES  5    /* max retries before closing connection       */
 
 /*----- Packet types -----*/
 #define SYN      0        /* Opens a connection                          */
@@ -60,21 +59,25 @@ enum {
 	SYN_SENT,
 	SYN_RCVD,
 	ESTABLISHED,
+    DATA_SENT,
+    DATA_RCVD,
 	FIN_SENT,
 	FIN_RCVD
 };
 
 extern state_t s;
+struct sockaddr *senderServerAddr, *receiverServerAddr;
+socklen_t senderSocklen, receiverSocklen;
 
 void gbn_init();
 int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen);
-int gbn_listen(int sockfd, int backlog, struct sockaddr *server, socklen_t socklen);
+int gbn_listen(int sockfd, int backlog);
 int gbn_bind(int sockfd, const struct sockaddr *server, socklen_t socklen);
 int gbn_socket(int domain, int type, int protocol);
-int gbn_accept(int sockfd, struct sockaddr *client, socklen_t socklen);
+int gbn_accept(int sockfd, struct sockaddr *addr, socklen_t addrlen);
 int gbn_close(int sockfd);
-ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest, socklen_t socklen);
-ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src, socklen_t socklen);
+ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags);
+ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags);
 
 ssize_t  maybe_sendto(int  s, const void *buf, size_t len, int flags, \
                       const struct sockaddr *to, socklen_t tolen);
