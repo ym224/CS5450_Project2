@@ -1,5 +1,6 @@
 #include "gbn.h"
 
+state_t s;
 uint16_t checksum(uint16_t *buf, int nwords)
 {
 	uint32_t sum;
@@ -83,7 +84,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 
                 // make packet with buffer data
                 packet = make_packet(DATA, 0, -1, slicedBuf, DATALEN);
-                if (sendto(sockfd, slicedBuf, DATALEN, flags, senderServerAddr, senderSocklen) == -1) {
+                if (sendto(sockfd, packet, sizeof(packet), flags, senderServerAddr, senderSocklen) == -1) {
                     attempts ++;
                     continue;
                 }
@@ -108,37 +109,36 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
                 else {
                     attempts ++;
                 }
+                free(packet);
+                free(rec_header);
             }
 
             // if data was sent 5 times without receiving dataack, return -1
             if (attempts == 5) {
                 return -1;
             }
-
-            free(packet);
-            free(rec_header);
-
         }
         // fast mode
         else {
-
             gbnhdr * packet_one = make_packet(DATA, s.seqnum, -1, slicedBuf, DATALEN);
 
             // send
-            if (sendto(sockfd, slicedBuf, DATALEN, flags, senderServerAddr, senderSocklen) == -1) {
+            if (sendto(sockfd, packet_one, sizeof(packet_one), flags, senderServerAddr, senderSocklen) == -1) {
                 return -1;
             }
 
             // set state to data sent
             s.state = DATA_SENT;
+            int firstSeqnum = s.seqnum;
+
+            memset(slicedBuf, NULL, DATALEN);
 
             // only send second packet if there's remaining data
             if (i + 1 < numPackets) {
-
+                s.seqnum ++ ;
                 memcpy(slicedBuf, &buf[(i + 1) * DATALEN], DATALEN);
-
-                s.seqnum ++;
-                sendto(sockfd, slicedBuf, DATALEN, flags, senderServerAddr, senderSocklen);
+                gbnhdr *packet_second = make_packet(DATA, s.seqnum, -1, slicedBuf, DATALEN);
+                sendto(sockfd, packet_second, sizeof(packet_second), flags, senderServerAddr, senderSocklen);
             }
 
 
@@ -153,47 +153,43 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
                 }
 
                 // verify time out, check header type
-                // received ack for second packet, all good
-                if (check_packet(rec_header, DATAACK, -1) == 0) {
+                if (check_packet(rec_header, DATAACK, -1) == 0){
+                    // received ack for latest packet, all good
+                    if (rec_header->seqnum == s.seqnum) {
                     s.state = DATA_RCVD;
                     s.seqnum++;
-
-                }
-                // only received ack for first packet sent
-                else if (rec_header->seqnum == s.seqnum - 1) {
-
-
-                }
-                if (rec_header->seqnum == s.seqnum) {
-                    s.mode = SLOW;
-                    break;
-                }
-                // a
-                else if (rec_header->seqnum == s.seqnum && s.seqnum == secondSeqnum){
-                    cur_mode = SLOW;
-                    track = secondTrack;
-                    break;
+                    i ++;
+                    }
+                    // only received ack for first packet sent
+                    else if (rec_header->seqnum == firstSeqnum) {
+                        // need to resend starting with second packet
+                    }
+                    else {
+                        attempts++;
+                        continue;
+                    }
                 }
                 else {
-                    attempts++;
+                    if (rec_header->seqnum == firstSeqnum) {
+                        s.seqnum = (uint8_t )firstSeqnum;
+                        s.mode = SLOW;
+                    }
+                    else {
+                        attempts ++;
+                    }
+
                 }
-            }
             free(rec_header);
             }
 
-            if (attempts == 5) {
+            if (s.timed_out == 0 || attempts == 5) {
                 // switch to slow mode
                 s.mode = SLOW;
-                s.seqnum --;
+                s.timed_out = 1;
+                // reset sequence #
             }
         }
     }
-
-	if (s.timed_out == 0 || attempts == 5) {
-        s.timed_out = 1;
-		s.mode = SLOW;
-
-	}
 	s.state = CLOSED;
 
 	return len;
@@ -220,7 +216,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
         memcpy(rec_buf, packet->data, sizeof(packet->data));
 
 		// reply with dataack header with the seqnum sent
-		gbnhdr *header = make_packet(DATAACK, packet->seqnum, 0, NULL, NULL);
+		gbnhdr *header = make_packet(DATAACK, packet->seqnum, 0, NULL, 0);
 
 		if (sendto(sockfd, header, sizeof(gbnhdr), 0, receiverServerAddr, receiverSocklen) == -1) {
 			return -1;
@@ -230,7 +226,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 
     // if a connection teardown request is received, reply with FINACK header
 	if (check_packet(packet, FIN, 0) == 0) {
-		gbnhdr *header = make_packet(FINACK, 0, 0, NULL, NULL);
+		gbnhdr *header = make_packet(FINACK, 0, 0, NULL, 0);
 		if (sendto(sockfd, header, sizeof(gbnhdr), 0, receiverServerAddr, receiverSocklen) == -1){
 			return -1;
 		}
@@ -246,7 +242,7 @@ int gbn_close(int sockfd){
 
     // sender initiates connection teardown by sending a FIN header
 	if (s.state == ESTABLISHED) {
-		gbnhdr * header = make_packet(FIN, 0, 0, NULL, NULL);
+		gbnhdr * header = make_packet(FIN, 0, 0, NULL, 0);
 		if (sendto(sockfd, header, sizeof(gbnhdr), 0, senderServerAddr, senderSocklen) == -1){
             return -1;
         }
@@ -254,7 +250,7 @@ int gbn_close(int sockfd){
 	}
 	// if receiver sees a FIN header, reply with FINACK and close socket connection
 	else if (s.state == FIN_SENT){
-		gbnhdr * header = make_packet(FINACK, 0, 0, NULL, NULL);
+		gbnhdr * header = make_packet(FINACK, 0, 0, NULL, 0);
 
 		if (sendto(sockfd, header, sizeof(gbnhdr), 0, receiverServerAddr, receiverSocklen) == -1){
             return -1;
@@ -278,7 +274,7 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 		return -1;
 	}
 
-	gbnhdr *header = make_packet(SYN, 0, 0, NULL, NULL);
+	gbnhdr *header = make_packet(SYN, 0, 0, NULL, 0);
 
 	int attempt = 0;
 	while (attempt < MAX_RETRIES) {
@@ -348,12 +344,12 @@ int gbn_accept(int sockfd, struct sockaddr *client, socklen_t socklen){
     gbnhdr * header;
     // if connection teardown initiated, reject connection by sending RST
     if (s.state == FIN_SENT) {
-         header = make_packet(RST, 0, 0, NULL, NULL);
+         header = make_packet(RST, 0, 0, NULL, 0);
     }
 
     // accept connection initiation by sending header with SYNACK
     else {
-        header = make_packet(SYNACK, 0, 0, NULL, NULL);
+        header = make_packet(SYNACK, 0, 0, NULL, 0);
     }
 
 	if (sendto(sockfd, header, sizeof(header), 0, client, socklen) == -1) {
