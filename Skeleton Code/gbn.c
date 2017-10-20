@@ -66,7 +66,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags, const struc
 			memcpy(slicedBuf, &buf[i*DATALEN], DATALEN);
 			slicedBuf[DATALEN] = '\0';
 			sendto(sockfd, slicedBuf, DATALEN, flags, dest, socketlen);
-		}
+
 	}
 
 	else {

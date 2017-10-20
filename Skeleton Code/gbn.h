@@ -60,7 +60,7 @@ enum {
 	SYN_SENT,
 	SYN_RCVD,
 	ESTABLISHED,
-	FIN_SENT,`
+	FIN_SENT,
 	FIN_RCVD
 };
 
