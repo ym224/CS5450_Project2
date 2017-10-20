@@ -46,7 +46,7 @@ typedef struct {
 
 typedef struct state_t{
 	int mode, state, timed_out;
-	uint8_t  seqnum;
+	uint8_t  seqnum, rec_seqnum; // current seqnum sent (managed by sender), current expected seq num to be received (managed by receiver)
 } state_t;
 
 enum {
