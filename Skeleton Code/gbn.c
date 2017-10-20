@@ -1,6 +1,7 @@
 #include "gbn.h"
 
 state_t s;
+
 uint16_t checksum(uint16_t *buf, int nwords)
 {
 	uint32_t sum;
@@ -39,7 +40,7 @@ int check_packet(gbnhdr *packet, int type, int isHeader) {
 	//check time out
 	if (s.timed_out == 0) {
         // reset time out flag
-        s.timed_out = 1;
+        s.timed_out = -1;
         return -1;
     }
 
@@ -187,7 +188,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
             if (s.timed_out == 0 || attempts == 5) {
                 // switch to slow mode
                 s.mode = SLOW;
-                s.timed_out = 1;
+                s.timed_out = -1;
                 // reset sequence #
             }
         }
@@ -300,11 +301,12 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 
 		// start timer and wait for ack
 
-		alarm(TIMEOUT);
+		alarm(10);
 
         gbnhdr *rec_header = malloc(sizeof(gbnhdr));
 		// received an ack from receiver/server
 		if (recvfrom(sockfd, rec_header, sizeof(rec_header), 0, receiverServerAddr, &receiverSocklen) < 0) {
+            printf("error in rec syn ack from receiver\n");
             attempt ++;
             continue;
 		}
@@ -322,15 +324,20 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 }
 
 int gbn_listen(int sockfd, int backlog){
+    printf("in listen\n");
     // wait for sender to initiate connection
 	gbnhdr * header = malloc(sizeof(gbnhdr));
+    printf("after creating header for syn\n");
 
 	if (recvfrom(sockfd, header, sizeof(gbnhdr), 0, receiverServerAddr, &receiverSocklen) == -1) {
+        printf("error rec syn from sender\n");
 		return -1;
 	}
     // check if packet contains SYN header
 	if (check_packet(header, SYN, 0) == 0) {
         s.state = SYN_RCVD;
+        printf("received syn header\n");
+
         return 0;
     }
     return -1;
@@ -341,6 +348,7 @@ int gbn_bind(int sockfd, const struct sockaddr *server, socklen_t socklen){
     receiverServerAddr = (struct sockaddr *)server;
     receiverSocklen = socklen;
 
+    printf("in bind\n");
 	return bind(sockfd, server, socklen);
 }	
 
@@ -354,6 +362,7 @@ int gbn_socket(int domain, int type, int protocol){
 
 // receiver sends ack
 int gbn_accept(int sockfd, struct sockaddr *client, socklen_t socklen){
+    printf("in accept\n");
     gbnhdr * header;
     // if connection teardown initiated, reject connection by sending RST
     if (s.state == FIN_SENT) {
@@ -368,7 +377,9 @@ int gbn_accept(int sockfd, struct sockaddr *client, socklen_t socklen){
 	if (sendto(sockfd, header, sizeof(header), 0, client, socklen) == -1) {
 		return -1;
 	}
-	return sockfd;
+    printf("sent synack header\n");
+
+    return sockfd;
 }
 
 
