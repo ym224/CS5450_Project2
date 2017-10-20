@@ -198,7 +198,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 
 	// process buffer data
-	printf ("gbn_recv: sockfd- %i, len %i, flags %i",sockfd, len, flags);
+	printf ("gbn_recv: sockfd- %i, len %i, flags %i \n",sockfd, len, flags);
 
 	gbnhdr * packet = malloc(sizeof(gbnhdr));
 
@@ -207,11 +207,11 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 
     // if a data packet is received, check packet to verify its type and seqnum
 	if (check_packet(packet, DATA, -1) == 0){
-		printf("check packet successful");
+		printf("check packet successful \n");
 
 		// check if data is corrupt
 		if (checksum(buf, sizeof(packet->data)) == -1) {
-			printf("check sum successful");
+			printf("check sum successful \n");
 			return -1;
 		}
 
@@ -222,7 +222,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 		gbnhdr *header = make_packet(DATAACK, packet->seqnum, 0, NULL, 0);
 
 		if (sendto(sockfd, header, sizeof(gbnhdr), 0, receiverServerAddr, receiverSocklen) == -1) {
-			printf ("inside sendto");
+			printf ("inside sendto \n");
 			return -1;
 		}
 		return sizeof(packet->data);
@@ -230,7 +230,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 
     // if a connection teardown request is received, reply with FINACK header
 	if (check_packet(packet, FIN, 0) == 0) {
-		printf("reply with FINACK header");
+		printf("reply with FINACK header \n");
 		gbnhdr *header = make_packet(FINACK, 0, 0, NULL, 0);
 		if (sendto(sockfd, header, sizeof(gbnhdr), 0, receiverServerAddr, receiverSocklen) == -1){
 			return -1;
@@ -244,9 +244,10 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 }
 
 int gbn_close(int sockfd){
-	printf("inside gnb_close");
+	printf("inside gnb_close \n");
     // sender initiates connection teardown by sending a FIN header
 	if (s.state == ESTABLISHED) {
+		printf("gnb_close: established \n");
 		gbnhdr * header = make_packet(FIN, 0, 0, NULL, 0);
 		if (sendto(sockfd, header, sizeof(gbnhdr), 0, senderServerAddr, senderSocklen) == -1){
             return -1;
