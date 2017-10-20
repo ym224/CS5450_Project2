@@ -67,6 +67,8 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 
     // split data into multiple packets
     int numPackets = (int)len / DATALEN;
+    printf("in send and ready to send %i\n", numPackets);
+
     if (len % DATALEN != 0) {
         numPackets ++;
     }
@@ -190,7 +192,9 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
             }
         }
     }
-	s.state = CLOSED;
+    printf("end of send");
+
+    s.state = CLOSED;
 
 	return len;
 }
@@ -244,7 +248,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 }
 
 int gbn_close(int sockfd){
-	printf("inside gnb_close \n");
+    printf("in close connection\n");
     // sender initiates connection teardown by sending a FIN header
 	if (s.state == ESTABLISHED) {
 		printf("gnb_close: established \n");
@@ -253,22 +257,23 @@ int gbn_close(int sockfd){
             return -1;
         }
         s.state = FIN_SENT;
-	}
+        printf("fin sent to close connection\n");
+    }
 	// if receiver sees a FIN header, reply with FINACK and close socket connection
-	else if (s.state == FIN_SENT){
+	else if (s.state == FIN_SENT) {
 		gbnhdr * header = make_packet(FINACK, 0, 0, NULL, 0);
 
 		if (sendto(sockfd, header, sizeof(gbnhdr), 0, receiverServerAddr, receiverSocklen) == -1){
             return -1;
         }
-		close(sockfd);
+        printf("finack sent to close connection\n");
+        close(sockfd);
 	}
     return 0;
 }
 
 // client initiates connection by sending SYN to server
 int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
-
     // pointer to local struct on sender server where receiver address is stored
     senderServerAddr = (struct sockaddr *)server;
     senderSocklen = socklen;
@@ -281,7 +286,7 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 	}
 
 	gbnhdr *header = make_packet(SYN, 0, 0, NULL, 0);
-
+    printf("in gbn connect\n");
 	int attempt = 0;
 	while (attempt < MAX_RETRIES) {
 		// send SYN header to initialize connection
@@ -290,6 +295,7 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 			continue;
 		}
 
+        printf("sent syn header\n");
 		s.state = SYN_SENT;
 
 		// start timer and wait for ack
@@ -305,7 +311,8 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 
         // check for timeout, check if header type is SYNACK
 		if (check_packet(rec_header, SYNACK, 0) == 0) {
-			s.state = ESTABLISHED;
+            printf("received synack header\n");
+            s.state = ESTABLISHED;
 			return 0;
 		}
 		attempt ++;
