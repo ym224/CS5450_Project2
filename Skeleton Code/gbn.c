@@ -13,13 +13,18 @@ uint16_t checksum(uint16_t *buf, int nwords)
 	return ~sum;
 }
 
+// signal handler that sets time out to true
 void sig_handler(int signum){
 	s.timed_out = 0;
 	printf("Received signal %d\n", signum);
 }
 
+// create packet for sending headers, data and acks
 gbnhdr * make_packet(uint8_t type, uint8_t seqnum, int isHeader, char *buffer, int datalen){
-	gbnhdr *packet = malloc(sizeof(gbnhdr));
+    printf("datalen %i\n", datalen);
+
+    gbnhdr *packet = malloc(sizeof(gbnhdr));
+
 	packet->type = type;
 	packet->seqnum = seqnum;
 
@@ -29,7 +34,6 @@ gbnhdr * make_packet(uint8_t type, uint8_t seqnum, int isHeader, char *buffer, i
 	}
     // otherwise set checksum when sending data packet
 	else {
-        printf("datalen %i\n", datalen);
 		memcpy(packet->data, buffer, datalen);
         packet->datalen = datalen; // need to keep track of the exact size of data to write to output file
         packet->checksum = checksum((uint16_t *) buffer, datalen);
@@ -41,14 +45,14 @@ gbnhdr * make_packet(uint8_t type, uint8_t seqnum, int isHeader, char *buffer, i
 int check_timeout() {
     if (s.timed_out == 0) {
         printf("timed out\n");
-    // reset time out flag
+        // reset time out flag
         s.timed_out = -1;
         return -1;
     }
     return 0;
 }
 
-
+// check packet type is expected
 int check_packetType(gbnhdr *packet, int type) {
     // check packet type
     if (packet->type != type) {
@@ -59,6 +63,7 @@ int check_packetType(gbnhdr *packet, int type) {
 
 int check_seqnum(gbnhdr *packet, int expected) {
     // on receiver side: packet seqnum received should be next expected seqnum
+    // on sender side: packet seqnum for acks should be last sent seqnum
     if (packet->seqnum != expected) {
         printf("expected seqnum %i but received seqnum %i\n", packet->seqnum, s.seqnum);
         return -1;
@@ -71,12 +76,6 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
     s.seqnum = 0;
     s.mode = SLOW;
 
-	/* Hint: Check the data length field 'len'.
-	 *       If it is > DATALEN, you will have to split the data
-	 *       up into multiple packets - you don't have to worry
-	 *       about getting more than N * DATALEN.
-	 */
-
     // split data into multiple packets
     int numPackets = (int) len / DATALEN;
 
@@ -85,12 +84,21 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
     }
     printf("in send and ready to send %i packets\n", numPackets);
 
-    char * slicedBuf = (char *) malloc(DATALEN);
+    char * slicedBuf = malloc(DATALEN);
+    int datalen = (int)len;
 
-    for (int i=1; i<=numPackets; i++) {
-        memset(slicedBuf, '\0', DATALEN);
+    for (int i=0; i<numPackets; i++) {
 
-        memcpy(slicedBuf, buf, len);
+        datalen = (int)len - (i*DATALEN);
+
+        if (datalen > DATALEN) {
+            datalen = DATALEN;
+        }
+        memset(slicedBuf, '\0', datalen);
+
+        // copy part or all of char buffer into the new sliced buffer
+        memcpy(slicedBuf, buf + i * DATALEN, datalen);
+
         printf("sending packet %i\n", i);
         printf("sliced buf %s\n", slicedBuf);
         gbnhdr *packet, *rec_header;
@@ -102,8 +110,8 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
             while (s.state != DATA_RCVD && attempts < 5) {
 
                 // make packet with buffer data
-                packet = make_packet(DATA, s.seqnum, -1, slicedBuf, (int)len);
-                if (maybe_sendto(sockfd, packet, sizeof(*packet), flags, senderServerAddr, senderSocklen) == -1) {
+                packet = make_packet(DATA, s.seqnum, -1, slicedBuf, datalen);
+                if (sendto(sockfd, packet, sizeof(*packet), flags, senderServerAddr, senderSocklen) == -1) {
                     attempts ++;
                     continue;
                 }
@@ -142,11 +150,15 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
         // fast mode
         else {
             printf("in fast mode\n");
-            gbnhdr * packet_one = make_packet(DATA, s.seqnum, -1, slicedBuf, DATALEN);
+            gbnhdr * packet_one, *packet_two;
+            packet_one = make_packet(DATA, s.seqnum, -1, slicedBuf, datalen);
 
-            // send
+
+            printf("sending packet 1 in fast mode\n");
+            // send packet one
             if (sendto(sockfd, packet_one, sizeof(packet_one), flags, senderServerAddr, senderSocklen) == -1) {
-                return -1;
+                printf("sending packet 1 failed\n");
+                continue;
             }
 
             // set state to data sent
@@ -155,52 +167,78 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
             int secondSeqnum = s.seqnum;
             int isSecondPacket = -1;
 
-            memset(slicedBuf, NULL, DATALEN);
-
             // only send second packet if there's remaining data
             if (i + 1 < numPackets) {
+                datalen = (int)len - (i + 1) * DATALEN;
+                if (datalen > DATALEN) {
+                    datalen = DATALEN;
+                }
                 secondSeqnum = s.seqnum ++;
                 isSecondPacket = 0;
-                memcpy(slicedBuf, &buf[(i + 1) * DATALEN], DATALEN);
-                gbnhdr *packet_second = make_packet(DATA, s.seqnum, -1, slicedBuf, DATALEN);
-                sendto(sockfd, packet_second, sizeof(packet_second), flags, senderServerAddr, senderSocklen);
+                memset(slicedBuf, '\0', DATALEN);
+                memcpy(slicedBuf, buf + (i + 1) * DATALEN, datalen);
+                packet_two = make_packet(DATA, s.seqnum, -1, slicedBuf, datalen);
+                printf("sending packet 2 in fast mode\n");
+                printf("pk2 data size %i\n", packet_two->datalen);
+                if (sendto(sockfd, packet_two, sizeof(packet_two), flags, senderServerAddr, senderSocklen) == -1){
+                    printf("sending packet 2 failed\n");
+                    continue;
+                }
             }
 
-
+            int firstAckReceived = -1;
             while (s.timed_out == -1 && s.state != DATA_RCVD && attempts < 5) {
                 alarm(TIMEOUT);
 
-                gbnhdr *rec_header = malloc(sizeof(gbnhdr));
+                rec_header = malloc(sizeof(gbnhdr));
 
                 if (recvfrom(sockfd, rec_header, sizeof(rec_header), 0, receiverServerAddr, &receiverSocklen) == -1) {
                     attempts ++;
                     continue;
                 }
 
-                // verify header type = dataack
-                if (check_packetType(rec_header, DATAACK) == 0) {
-                    s.state = DATA_RCVD;
+                // if header type is not dataack, attempt again
+                if (check_packetType(rec_header, DATAACK) == -1) {
+                    attempts ++;
+                    continue;
                 }
-            }
 
-            int resendAll = -1;
-            // received ack for second packet, all good
-            if (s.state == DATA_RCVD) {
-                if (isSecondPacket == 0 && check_seqnum(rec_header, secondSeqnum) == 0) {
-                    s.seqnum++;
-                    i++;
+                // check if 2 packets were sent.
+                if (isSecondPacket == 0) {
+                    // if sent and received ack for packet 2, then slide window by increasing seqnum.
+                    // Since acks are sent in order, ack for first packet must've been received earlier
+                    if (check_seqnum(rec_header, secondSeqnum) == 0) {
+                        s.state = DATA_RCVD;
+                        s.seqnum++;
+                        i++;
+                        break;
+                    }
+                    // received ack only for packet 1, need to wait for ack for packet 2.
+                    if (check_seqnum(rec_header, firstSeqnum) == 0) {
+                        firstAckReceived = 0;
+                        continue;
+                    }
+                    // received ack for packet sent earlier
+                    attempts ++;
                 }
-                    // only received ack for first packet sent
-                else if (check_seqnum(rec_header, firstSeqnum) == 0) {
-                    s.mode = SLOW;
-                }
+                // if only one packet was sent and received ack for that, then done.
                 else {
-                    resendAll = 0;
+                    if (check_seqnum(rec_header, firstSeqnum) == 0) {
+                        s.seqnum ++;
+                        s.state = DATA_RCVD;
+                        break;
+                    }
                 }
                 free(rec_header);
+                free(packet_one);
             }
 
-            if (resendAll == 0 || s.timed_out == 0 || attempts == 5) {
+            // if only received ack for packet 1 and not 2, switch to slow mode
+            if (firstAckReceived) {
+                s.mode = SLOW;
+            }
+            // if received no acks, switch to slow mode, reset seqnum if packet 2 was sent
+            if (s.timed_out == 0 || attempts == 5) {
                 // switch to slow mode
                 s.mode = SLOW;
                 s.timed_out = -1;
@@ -210,8 +248,9 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
             }
         }
     }
+    free(slicedBuf);
     printf("end of send\n");
-	return len;
+	return datalen;
 }
 
 ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
@@ -227,20 +266,20 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 	if (check_packetType(packet, DATA) == 0){
 		printf("received data packet with seqnum %i\n", packet->seqnum);
 
+        // discard if data seqnum is not the expected seqnum
         if (check_seqnum(packet, s.rec_seqnum) == -1) {
             printf("received an unexpected seqnum, discarding data...\n");
             discard = 0;
         }
 
-
         //int packet_size = (int)strlen((const char*)packet->data);
         int packet_size = packet->datalen;
 
-        // check if data is corrupt
+        // discard if data is corrupt
 		if (checksum(buf, packet_size) == -1) {
 			printf("data is corrupt\n");
-			return -1;
-		}
+            discard = 0;
+        }
 
         printf("buffer %s\n", packet->data);
         printf("buffer size: %i\n", packet_size);
@@ -255,9 +294,10 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 			return -1;
 		}
         printf("sent dataack\n");
+        free(header);
 
         if (discard == 0) {
-            return -1;
+            return 0;
         }
         s.rec_seqnum ++;
         return packet_size;
@@ -374,7 +414,6 @@ int gbn_listen(int sockfd, int backlog){
 	if (check_packetType(header, SYN) == 0) {
         s.state = SYN_RCVD;
         printf("received syn header\n");
-
         return 0;
     }
     return -1;
@@ -414,9 +453,11 @@ int gbn_accept(int sockfd, struct sockaddr *client, socklen_t socklen){
     }
 
     if (sendto(sockfd, header, sizeof(header), 0, client, socklen) == -1) {
-		return -1;
+        free(header);
+        return -1;
 	}
     printf("sent synack header\n");
+    free(header);
 
     return sockfd;
 }
