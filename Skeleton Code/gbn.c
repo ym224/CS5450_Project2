@@ -32,8 +32,10 @@ gbnhdr * make_packet(uint8_t type, uint8_t seqnum, int isHeader, char *buffer, i
 	else {
         printf("datalen %i\n", datalen);
 		memcpy(packet->data, buffer, datalen);
+        printf("size of packet data %i\n", (int)strlen((const char*)packet->data));
 
-		packet->checksum = checksum((uint16_t *) buffer, datalen);
+
+        packet->checksum = checksum((uint16_t *) buffer, datalen);
 	}
 	return packet;
 }
@@ -85,7 +87,6 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
         numPackets ++;
     }
     printf("in send and ready to send %i packets\n", numPackets);
-    printf("packet length %i\n", (int)len);
 
     char * slicedBuf = (char *) malloc(DATALEN);
 
@@ -222,7 +223,6 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 
 	gbnhdr * packet = malloc(sizeof(gbnhdr));
     int discard = -1;
-    printf("size of packet data is %i\n", (int)sizeof(*packet->data));
 
 	recvfrom(sockfd, packet, sizeof(gbnhdr), 0, receiverServerAddr, &receiverSocklen);
 
@@ -236,14 +236,15 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
         }
 
 
-		// check if data is corrupt
-		if (checksum(buf, sizeof(*packet->data)) == -1) {
+        int packet_size = (int)strlen((const char*)packet->data);
+
+        // check if data is corrupt
+		if (checksum(buf, packet_size) == -1) {
 			printf("data is corrupt\n");
 			return -1;
 		}
 
-        int packet_size = sizeof(*packet->data);
-
+        printf("buffer %s\n", packet->data);
         printf("buffer size: %i\n", packet_size);
         memcpy(buf, packet->data, packet_size);
 
