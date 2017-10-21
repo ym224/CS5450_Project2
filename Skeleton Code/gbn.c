@@ -19,7 +19,6 @@ void sig_handler(int signum){
 }
 
 gbnhdr * make_packet(uint8_t type, uint8_t seqnum, int isHeader, char *buffer, int datalen){
-    printf("creating packet with size %i\n", (int)sizeof(gbnhdr));
 	gbnhdr *packet = malloc(sizeof(gbnhdr));
 	packet->type = type;
 	packet->seqnum = seqnum;
@@ -32,9 +31,7 @@ gbnhdr * make_packet(uint8_t type, uint8_t seqnum, int isHeader, char *buffer, i
 	else {
         printf("datalen %i\n", datalen);
 		memcpy(packet->data, buffer, datalen);
-        printf("size of packet data %i\n", (int)strlen((const char*)packet->data));
-
-
+        packet->datalen = datalen; // need to keep track of the exact size of data to write to output file
         packet->checksum = checksum((uint16_t *) buffer, datalen);
 	}
 	return packet;
@@ -106,7 +103,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 
                 // make packet with buffer data
                 packet = make_packet(DATA, s.seqnum, -1, slicedBuf, (int)len);
-                if (sendto(sockfd, packet, sizeof(*packet), flags, senderServerAddr, senderSocklen) == -1) {
+                if (maybe_sendto(sockfd, packet, sizeof(*packet), flags, senderServerAddr, senderSocklen) == -1) {
                     attempts ++;
                     continue;
                 }
@@ -236,7 +233,8 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
         }
 
 
-        int packet_size = (int)strlen((const char*)packet->data);
+        //int packet_size = (int)strlen((const char*)packet->data);
+        int packet_size = packet->datalen;
 
         // check if data is corrupt
 		if (checksum(buf, packet_size) == -1) {
@@ -246,6 +244,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 
         printf("buffer %s\n", packet->data);
         printf("buffer size: %i\n", packet_size);
+
         memcpy(buf, packet->data, packet_size);
 
 		// reply with dataack header with seqnum received

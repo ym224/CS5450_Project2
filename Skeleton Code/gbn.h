@@ -44,11 +44,12 @@ typedef struct {
 	uint8_t  seqnum;          /* sequence number of the packet              */
     uint16_t checksum;        /* header and payload checksum                */
     uint8_t data[DATALEN];    /* pointer to the payload                     */
+    int datalen;              /* keeps track of num of chars in data        */
 } __attribute__((packed)) gbnhdr;
 
 typedef struct state_t{
 	int mode, state, timed_out;
-	uint8_t  seqnum, rec_seqnum; // current seqnum sent (managed by sender), current expected seq num to be received (managed by receiver)
+	uint8_t  seqnum, rec_seqnum; /* current seqnum sent (managed by sender), current expected seq num to be received (managed by receiver) */
 } state_t;
 
 enum {
