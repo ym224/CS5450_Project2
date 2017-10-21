@@ -19,6 +19,8 @@
 extern int h_errno;
 extern int errno;
 
+#define h_addr h_addr_list[0] /* for backward compatibility */
+
 /*----- Protocol parameters -----*/
 #define LOSS_PROB 1e-2    /* loss probability                            */
 #define CORR_PROB 1e-3    /* corruption probability                      */
