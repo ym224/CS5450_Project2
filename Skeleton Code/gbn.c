@@ -73,8 +73,12 @@ int check_seqnum(gbnhdr *packet, int expected) {
 
 ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	int attempts = 0;
-    s.seqnum = 0;
-    s.mode = SLOW;
+    if (&s.seqnum == NULL) {
+        s.seqnum = 0;
+    }
+    if (&s.mode == NULL) {
+        s.mode = SLOW;
+    }
 
     // split data into multiple packets
     int numPackets = (int) len / DATALEN;
@@ -100,7 +104,6 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
         memcpy(slicedBuf, buf + i * DATALEN, datalen);
 
         printf("sending packet %i\n", i);
-        printf("sliced buf %s\n", slicedBuf);
         gbnhdr *packet, *rec_header;
 
         // slow mode
@@ -154,9 +157,9 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
             packet_one = make_packet(DATA, s.seqnum, -1, slicedBuf, datalen);
 
 
-            printf("sending packet 1 in fast mode\n");
+            printf("sending packet 1 with seqnum %i in fast mode\n", s.seqnum);
             // send packet one
-            if (sendto(sockfd, packet_one, sizeof(packet_one), flags, senderServerAddr, senderSocklen) == -1) {
+            if (sendto(sockfd, packet_one, sizeof(*packet_one), flags, senderServerAddr, senderSocklen) == -1) {
                 printf("sending packet 1 failed\n");
                 continue;
             }
@@ -173,15 +176,18 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
                 if (datalen > DATALEN) {
                     datalen = DATALEN;
                 }
-                secondSeqnum = s.seqnum ++;
+                s.seqnum ++;
+                secondSeqnum = s.seqnum;
+
                 isSecondPacket = 0;
                 memset(slicedBuf, '\0', DATALEN);
                 memcpy(slicedBuf, buf + (i + 1) * DATALEN, datalen);
                 packet_two = make_packet(DATA, s.seqnum, -1, slicedBuf, datalen);
-                printf("sending packet 2 in fast mode\n");
+                printf("sending packet 2 with seqnum %i in fast mode\n", s.seqnum);
                 printf("pk2 data size %i\n", packet_two->datalen);
-                if (sendto(sockfd, packet_two, sizeof(packet_two), flags, senderServerAddr, senderSocklen) == -1){
+                if (sendto(sockfd, packet_two, sizeof(*packet_two), flags, senderServerAddr, senderSocklen) == -1){
                     printf("sending packet 2 failed\n");
+                    isSecondPacket = -1;
                     continue;
                 }
             }
@@ -208,6 +214,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
                     // if sent and received ack for packet 2, then slide window by increasing seqnum.
                     // Since acks are sent in order, ack for first packet must've been received earlier
                     if (check_seqnum(rec_header, secondSeqnum) == 0) {
+                        printf("received ack for packet 2 with seqnum %i\n", secondSeqnum);
                         s.state = DATA_RCVD;
                         s.seqnum++;
                         i++;
@@ -215,6 +222,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
                     }
                     // received ack only for packet 1, need to wait for ack for packet 2.
                     if (check_seqnum(rec_header, firstSeqnum) == 0) {
+                        printf("received ack for packet 1 with seqnum %i\n", firstSeqnum);
                         firstAckReceived = 0;
                         continue;
                     }
@@ -228,6 +236,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
                         s.state = DATA_RCVD;
                         break;
                     }
+                    attempts ++;
                 }
                 free(rec_header);
                 free(packet_one);
@@ -249,7 +258,9 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
         }
     }
     free(slicedBuf);
+    printf("remaining: %i", datalen);
     printf("end of send\n");
+
 	return datalen;
 }
 
@@ -281,7 +292,6 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
             discard = 0;
         }
 
-        printf("buffer %s\n", packet->data);
         printf("buffer size: %i\n", packet_size);
 
         memcpy(buf, packet->data, packet_size);
@@ -293,7 +303,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 			printf ("error sending dataack\n");
 			return -1;
 		}
-        printf("sent dataack\n");
+        printf("sent dataack with seqnum %i\n", s.rec_seqnum);
         free(header);
 
         if (discard == 0) {
