@@ -16,7 +16,7 @@ uint16_t checksum(uint16_t *buf, int nwords)
 // signal handler that sets time out to true
 void sig_handler(int signum){
 	s.timed_out = 0;
-	printf("Received signal %d\n", signum);
+    printf("Timeout has occurred\n");
 }
 
 // create packet for sending headers, data and acks
@@ -73,6 +73,7 @@ int check_seqnum(gbnhdr *packet, int expected) {
 
 ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	int attempts = 0;
+
     if (&s.seqnum == NULL) {
         s.seqnum = 0;
     }
@@ -90,8 +91,9 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 
     char * slicedBuf = malloc(DATALEN);
     int datalen = (int)len;
+    int i;
 
-    for (int i=0; i<numPackets; i++) {
+    for (i=0; i<numPackets; i++) {
 
         datalen = (int)len - (i*DATALEN);
 
@@ -114,6 +116,8 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 
                 // make packet with buffer data
                 packet = make_packet(DATA, s.seqnum, -1, slicedBuf, datalen);
+                printf("sending packet with seqnum %i in slow mode\n", s.seqnum);
+
                 if (sendto(sockfd, packet, sizeof(*packet), flags, senderServerAddr, senderSocklen) == -1) {
                     attempts ++;
                     continue;
@@ -156,8 +160,8 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
             gbnhdr * packet_one, *packet_two;
             packet_one = make_packet(DATA, s.seqnum, -1, slicedBuf, datalen);
 
-
             printf("sending packet 1 with seqnum %i in fast mode\n", s.seqnum);
+
             // send packet one
             if (sendto(sockfd, packet_one, sizeof(*packet_one), flags, senderServerAddr, senderSocklen) == -1) {
                 printf("sending packet 1 failed\n");
@@ -183,8 +187,10 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
                 memset(slicedBuf, '\0', DATALEN);
                 memcpy(slicedBuf, buf + (i + 1) * DATALEN, datalen);
                 packet_two = make_packet(DATA, s.seqnum, -1, slicedBuf, datalen);
+
                 printf("sending packet 2 with seqnum %i in fast mode\n", s.seqnum);
                 printf("pk2 data size %i\n", packet_two->datalen);
+
                 if (sendto(sockfd, packet_two, sizeof(*packet_two), flags, senderServerAddr, senderSocklen) == -1){
                     printf("sending packet 2 failed\n");
                     isSecondPacket = -1;
@@ -204,7 +210,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
                 }
 
                 // if header type is not dataack, attempt again
-                if (check_packetType(rec_header, DATAACK) == -1) {
+                if (check_timeout() == 0 && check_packetType(rec_header, DATAACK) == -1) {
                     attempts ++;
                     continue;
                 }
@@ -215,6 +221,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
                     // Since acks are sent in order, ack for first packet must've been received earlier
                     if (check_seqnum(rec_header, secondSeqnum) == 0) {
                         printf("received ack for packet 2 with seqnum %i\n", secondSeqnum);
+                        firstAckReceived = -1;
                         s.state = DATA_RCVD;
                         s.seqnum++;
                         i++;
@@ -243,11 +250,13 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
             }
 
             // if only received ack for packet 1 and not 2, switch to slow mode
-            if (firstAckReceived) {
+            if (firstAckReceived == 0) {
+                printf("only 1st ack received in fast mode. switching to slow mode\n");
                 s.mode = SLOW;
             }
             // if received no acks, switch to slow mode, reset seqnum if packet 2 was sent
             if (s.timed_out == 0 || attempts == 5) {
+                printf("switching to slow mode\n");
                 // switch to slow mode
                 s.mode = SLOW;
                 s.timed_out = -1;
@@ -258,10 +267,10 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
         }
     }
     free(slicedBuf);
-    printf("remaining: %i", datalen);
+
     printf("end of send\n");
 
-	return datalen;
+	return 0;
 }
 
 ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
@@ -357,18 +366,20 @@ int gbn_close(int sockfd){
 
 // client initiates connection by sending SYN to server
 int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
+    s.mode = SLOW;
     // pointer to local struct on sender server where receiver address is stored
     senderServerAddr = (struct sockaddr *)server;
     senderSocklen = socklen;
 
+    gbnhdr *header = make_packet(SYN, 0, 0, NULL, 0);
+
     // SIGALRM is called after timeout alarm
-	signal(SIGALRM, sig_handler);
+    signal(SIGALRM, sig_handler);
 
 	if (sockfd < 0) {
 		return -1;
 	}
 
-	gbnhdr *header = make_packet(SYN, 0, 0, NULL, 0);
     printf("in gbn connect\n");
 	int attempt = 0;
     s.timed_out = -1;
@@ -385,7 +396,6 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 		s.state = SYN_SENT;
 
 		// start timer and wait for ack
-
 		alarm(TIMEOUT);
 
         gbnhdr *rec_header = malloc(sizeof(gbnhdr));
@@ -498,7 +508,7 @@ ssize_t maybe_sendto(int  s, const void *buf, size_t len, int flags, \
 		}
 
 		/*----- Sending the packet -----*/
-		int retval = sendto(s, buffer, len, flags, to, tolen);
+		int retval = maybe_sendto(s, buffer, len, flags, to, tolen);
 		free(buffer);
 		return retval;
 	}
