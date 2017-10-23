@@ -64,7 +64,6 @@ int main(int argc, char *argv[])
 		}
 		else if (numRead == 0)
 			break;
-        printf("buff %s with size %i\n", buf, (int)sizeof(buf));
 		fwrite(buf, 1, numRead, outputFile);
 	}
 
